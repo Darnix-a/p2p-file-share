@@ -1,0 +1,15 @@
+# Binaries
+p2p-drop
+*.exe
+*.tar.gz
+*.zip
+
+# Build output
+dist/
+bin/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
+*.swp
