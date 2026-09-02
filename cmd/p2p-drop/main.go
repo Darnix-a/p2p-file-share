@@ -110,7 +110,11 @@ func runSend(cmd *cobra.Command, args []string) {
 	fmt.Printf("🔑 Pairing Code: \033[1;32m%s\033[0m\n", roomCode)
 	fmt.Printf("======================================================\n")
 	fmt.Println("Tell your friend to run:")
-	fmt.Printf("  \033[1;36mp2p-drop receive %s\033[0m\n\n", roomCode)
+	if relayURL != defaultRelayURL {
+		fmt.Printf("  \033[1;36mp2p-drop receive %s --relay %s\033[0m\n\n", roomCode, relayURL)
+	} else {
+		fmt.Printf("  \033[1;36mp2p-drop receive %s\033[0m\n\n", roomCode)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

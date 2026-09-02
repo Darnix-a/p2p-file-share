@@ -18,6 +18,8 @@ var DefaultICEServers = []webrtc.ICEServer{
 			"stun:stun.l.google.com:19302",
 			"stun:stun1.l.google.com:19302",
 			"stun:stun2.l.google.com:19302",
+			"stun:stun3.l.google.com:19302",
+			"stun:stun4.l.google.com:19302",
 			"stun:stun.cloudflare.com:3478",
 		},
 	},
@@ -60,7 +62,32 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 		bufferedLow: make(chan struct{}, 1),
 	}
 
-	// Forward ICE candidates to signaling peer
+	// Buffer candidates arriving before SetRemoteDescription
+	var candidateMu sync.Mutex
+	var pendingCandidates []webrtc.ICECandidateInit
+	var remoteDescSet bool
+
+	addCandidateOrBuffer := func(cand webrtc.ICECandidateInit) {
+		candidateMu.Lock()
+		defer candidateMu.Unlock()
+		if !remoteDescSet {
+			pendingCandidates = append(pendingCandidates, cand)
+			return
+		}
+		_ = pc.AddICECandidate(cand)
+	}
+
+	flushCandidates := func() {
+		candidateMu.Lock()
+		defer candidateMu.Unlock()
+		remoteDescSet = true
+		for _, cand := range pendingCandidates {
+			_ = pc.AddICECandidate(cand)
+		}
+		pendingCandidates = nil
+	}
+
+	// Forward local ICE candidates to signaling peer
 	pc.OnICECandidate(func(c *webrtc.ICECandidate) {
 		if c == nil {
 			return
@@ -75,7 +102,7 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
 			select {
-			case t.errChan <- errors.New("WebRTC connection closed or failed"):
+			case t.errChan <- errors.New("WebRTC connection failed (could not negotiate NAT traversal)"):
 			default:
 			}
 		}
@@ -180,6 +207,8 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 						if err := pc.SetRemoteDescription(desc); err != nil {
 							continue
 						}
+						flushCandidates()
+
 						answer, err := pc.CreateAnswer(nil)
 						if err != nil {
 							continue
@@ -199,7 +228,9 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 							Type: webrtc.SDPTypeAnswer,
 							SDP:  sig.SDP,
 						}
-						_ = pc.SetRemoteDescription(desc)
+						if err := pc.SetRemoteDescription(desc); err == nil {
+							flushCandidates()
+						}
 					}
 
 				case "candidate":
@@ -207,7 +238,7 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 					if err == nil {
 						var init webrtc.ICECandidateInit
 						if err := json.Unmarshal(candBytes, &init); err == nil {
-							_ = pc.AddICECandidate(init)
+							addCandidateOrBuffer(init)
 						}
 					}
 				}
