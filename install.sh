@@ -49,7 +49,17 @@ if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/${BIN_NAME}.tar.gz"; then
   mv "$TMP_DIR/${BIN_NAME}-${OS}-${ARCH}" "${INSTALL_DIR}/${BIN_NAME}"
   chmod +x "${INSTALL_DIR}/${BIN_NAME}"
   echo "✅ ${BIN_NAME} installed successfully to ${INSTALL_DIR}/${BIN_NAME}"
-  echo "🚀 Run 'p2p-drop --help' to get started!"
+  
+  if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
+    echo ""
+    echo "💡 Note: '$INSTALL_DIR' is not in your current PATH."
+    echo "   - For Fish:  fish_add_path $INSTALL_DIR"
+    echo "   - For Bash:  export PATH=\"\$HOME/.local/bin:\$PATH\" >> ~/.bashrc"
+    echo "   - For Zsh:   export PATH=\"\$HOME/.local/bin:\$PATH\" >> ~/.zshrc"
+    echo ""
+  fi
+
+  echo "🚀 Run 'p2p-drop --help' or '$INSTALL_DIR/p2p-drop --help' to get started!"
 else
   echo ""
   echo "❌ Could not find a binary release at:"
