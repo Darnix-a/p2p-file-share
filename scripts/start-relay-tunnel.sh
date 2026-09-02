@@ -4,6 +4,9 @@ set -e
 RELAY_PORT=8080
 CLOUDFLARED_BIN="$HOME/.local/bin/cloudflared"
 
+# Kill any existing stale process on port 8080
+fuser -k "${RELAY_PORT}/tcp" 2>/dev/null || true
+
 if ! command -v "$CLOUDFLARED_BIN" >/dev/null 2>&1 && ! command -v cloudflared >/dev/null 2>&1; then
   echo "cloudflared not found. Installing..."
   mkdir -p "$HOME/.local/bin"
