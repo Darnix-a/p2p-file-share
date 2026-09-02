@@ -56,6 +56,8 @@ func NewClient(serverURL string, roomCode string, role string) (*Client, error) 
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 15 * time.Second,
+		ReadBufferSize:   1024 * 1024,
+		WriteBufferSize:  1024 * 1024,
 	}
 
 	conn, _, err := dialer.Dial(u.String(), nil)
@@ -69,14 +71,22 @@ func NewClient(serverURL string, roomCode string, role string) (*Client, error) 
 		room:       roomCode,
 		role:       role,
 		SignalChan: make(chan SignalEnvelope, 64),
-		BinaryChan: make(chan []byte, 512),
+		BinaryChan: make(chan []byte, 1024),
 		PeerJoined: make(chan struct{}, 1),
 		PeerLeft:   make(chan struct{}, 1),
 		ErrorChan:  make(chan error, 8),
 		done:       make(chan struct{}),
 	}
 
+	// Setup Keepalive Ping/Pong
+	conn.SetPingHandler(func(appData string) error {
+		c.writeMu.Lock()
+		defer c.writeMu.Unlock()
+		return conn.WriteControl(websocket.PongMessage, []byte(appData), time.Now().Add(5*time.Second))
+	})
+
 	go c.readLoop()
+	go c.keepaliveLoop()
 
 	// Send join message
 	joinMsg := ClientMessage{
@@ -90,6 +100,22 @@ func NewClient(serverURL string, roomCode string, role string) (*Client, error) 
 	}
 
 	return c, nil
+}
+
+func (c *Client) keepaliveLoop() {
+	ticker := time.NewTicker(20 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-c.done:
+			return
+		case <-ticker.C:
+			c.writeMu.Lock()
+			_ = c.ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second))
+			c.writeMu.Unlock()
+		}
+	}
 }
 
 func (c *Client) sendJSON(v interface{}) error {

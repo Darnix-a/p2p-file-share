@@ -16,6 +16,8 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true // Allow all origins for CLI/WebRTC signaling
 	},
+	ReadBufferSize:  1024 * 1024,
+	WriteBufferSize: 1024 * 1024,
 }
 
 // ClientMessage represents incoming text messages from CLI clients
@@ -91,15 +93,14 @@ func (s *Server) Handler() http.Handler {
 // Start runs the HTTP WebSocket signaling server on the given address (e.g. ":8080")
 func (s *Server) Start(addr string) error {
 	s.httpServer = &http.Server{
-		Addr:         addr,
-		Handler:      s.Handler(),
-		ReadTimeout:  60 * time.Second,
-		WriteTimeout: 60 * time.Second,
+		Addr:    addr,
+		Handler: s.Handler(),
+		// Note: Do NOT set ReadTimeout / WriteTimeout on http.Server for WebSockets
 	}
 
 	go s.runLoop()
 
-	log.Printf("[Signaling] Relay server listening on %s/ws\n", addr)
+	log.Printf("Relay server listening on %s/ws\n", addr)
 	return s.httpServer.ListenAndServe()
 }
 
@@ -167,23 +168,36 @@ func (s *Server) broadcastRawToRoom(roomID string, sender *ClientConn, msgType i
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		log.Printf("[Signaling] WebSocket upgrade error: %v\n", err)
+		log.Printf("WebSocket upgrade error: %v\n", err)
 		return
 	}
 
 	client := &ClientConn{
 		ws:   ws,
-		send: make(chan outMsg, 256),
+		send: make(chan outMsg, 1024),
 	}
 
-	// Write pump
+	// Write pump with heartbeat ping
 	go func() {
+		ticker := time.NewTicker(20 * time.Second)
 		defer func() {
+			ticker.Stop()
 			_ = client.ws.Close()
 		}()
-		for msg := range client.send {
-			if err := client.ws.WriteMessage(msg.msgType, msg.data); err != nil {
-				return
+		for {
+			select {
+			case msg, ok := <-client.send:
+				if !ok {
+					_ = client.ws.WriteMessage(websocket.CloseMessage, []byte{})
+					return
+				}
+				if err := client.ws.WriteMessage(msg.msgType, msg.data); err != nil {
+					return
+				}
+			case <-ticker.C:
+				if err := client.ws.WriteControl(websocket.PingMessage, []byte{}, time.Now().Add(5*time.Second)); err != nil {
+					return
+				}
 			}
 		}
 	}()
@@ -199,11 +213,18 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	}()
 
 	client.ws.SetReadLimit(16 * 1024 * 1024) // 16 MB max frame size
+	client.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+	client.ws.SetPongHandler(func(string) error {
+		client.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
+		return nil
+	})
+
 	for {
 		msgType, rawMsg, err := client.ws.ReadMessage()
 		if err != nil {
 			break
 		}
+		client.ws.SetReadDeadline(time.Now().Add(60 * time.Second))
 
 		if msgType == websocket.BinaryMessage {
 			if client.roomID != "" {
