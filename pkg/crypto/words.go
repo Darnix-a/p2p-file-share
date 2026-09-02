@@ -23,7 +23,7 @@ var defaultWordList = []string{
 	"wave", "willow", "wind", "wolf", "zenith", "zephyr",
 }
 
-// GenerateCode generates a memorable human-friendly pairing code (e.g., "7-crystal-dragon-falcon")
+// GenerateCode generates a memorable pairing code (e.g., "7-crystal-dragon-falcon")
 func GenerateCode(wordCount int) (string, error) {
 	if wordCount < 2 {
 		wordCount = 2
@@ -47,7 +47,12 @@ func GenerateCode(wordCount int) (string, error) {
 	return fmt.Sprintf("%d-%s", num, strings.Join(words, "-")), nil
 }
 
-// SanitizeCode normalizes user entered code (lowercases, trims spaces)
+// SanitizeCode normalizes user entered code (lowercases, strips quotes/spaces/accidental chars)
 func SanitizeCode(code string) string {
-	return strings.ToLower(strings.TrimSpace(code))
+	code = strings.ToLower(strings.TrimSpace(code))
+	code = strings.Trim(code, "\"'`")
+	code = strings.ReplaceAll(code, " ", "-")
+	code = strings.ReplaceAll(code, "_", "-")
+	code = strings.ReplaceAll(code, "@", "0") // In case of OCR typo @ -> 0
+	return code
 }

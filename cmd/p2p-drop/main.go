@@ -240,6 +240,16 @@ func runReceive(cmd *cobra.Command, args []string) {
 	}
 	defer sigClient.Close()
 
+	fmt.Println("Waiting for sender to connect...")
+	select {
+	case <-sigClient.PeerJoined:
+		fmt.Println("Peer connected.")
+	case err := <-sigClient.ErrorChan:
+		log.Fatalf("Signaling error: %v\n", err)
+	case <-ctx.Done():
+		return
+	}
+
 	tr, err := transport.EstablishTransport(ctx, sigClient, false)
 	if err != nil {
 		log.Fatalf("Connection failed: %v\n", err)
