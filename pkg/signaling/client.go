@@ -25,6 +25,7 @@ type Client struct {
 	room         string
 	role         string
 	SignalChan   chan SignalEnvelope
+	BinaryChan   chan []byte
 	PeerJoined   chan struct{}
 	PeerLeft     chan struct{}
 	ErrorChan    chan error
@@ -54,7 +55,7 @@ func NewClient(serverURL string, roomCode string, role string) (*Client, error) 
 	}
 
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 10 * time.Second,
+		HandshakeTimeout: 15 * time.Second,
 	}
 
 	conn, _, err := dialer.Dial(u.String(), nil)
@@ -67,7 +68,8 @@ func NewClient(serverURL string, roomCode string, role string) (*Client, error) 
 		url:        serverURL,
 		room:       roomCode,
 		role:       role,
-		SignalChan: make(chan SignalEnvelope, 32),
+		SignalChan: make(chan SignalEnvelope, 64),
+		BinaryChan: make(chan []byte, 512),
 		PeerJoined: make(chan struct{}, 1),
 		PeerLeft:   make(chan struct{}, 1),
 		ErrorChan:  make(chan error, 8),
@@ -110,14 +112,22 @@ func (c *Client) SendSignal(signal SignalEnvelope) error {
 	return c.sendJSON(msg)
 }
 
+// SendBinary streams raw binary frames directly to peer over the relay
+func (c *Client) SendBinary(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+	return c.ws.WriteMessage(websocket.BinaryMessage, data)
+}
+
 func (c *Client) readLoop() {
 	defer func() {
 		_ = c.Close()
 	}()
 
+	c.ws.SetReadLimit(16 * 1024 * 1024) // 16 MB max frame size
+
 	for {
-		var sMsg ServerMessage
-		err := c.ws.ReadJSON(&sMsg)
+		msgType, rawMsg, err := c.ws.ReadMessage()
 		if err != nil {
 			select {
 			case <-c.done:
@@ -126,6 +136,20 @@ func (c *Client) readLoop() {
 				c.ErrorChan <- fmt.Errorf("signaling connection error: %w", err)
 				return
 			}
+		}
+
+		if msgType == websocket.BinaryMessage {
+			select {
+			case c.BinaryChan <- rawMsg:
+			case <-c.done:
+				return
+			}
+			continue
+		}
+
+		var sMsg ServerMessage
+		if err := json.Unmarshal(rawMsg, &sMsg); err != nil {
+			continue
 		}
 
 		switch sMsg.Type {

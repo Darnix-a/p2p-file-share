@@ -168,20 +168,19 @@ func runSend(cmd *cobra.Command, args []string) {
 	fmt.Println("⏳ Waiting for peer to enter room code...")
 	select {
 	case <-sigClient.PeerJoined:
-		fmt.Println("🤝 Peer connected! Establishing WebRTC DataChannel NAT hole punch...")
+		fmt.Println("🤝 Peer connected!")
 	case err := <-sigClient.ErrorChan:
 		log.Fatalf("Signaling error: %v\n", err)
 	case <-ctx.Done():
 		return
 	}
 
-	tr, err := transport.ConnectWebRTC(ctx, sigClient, true, nil)
+	tr, err := transport.EstablishTransport(ctx, sigClient, true)
 	if err != nil {
-		log.Fatalf("WebRTC connection failed: %v\n", err)
+		log.Fatalf("Connection failed: %v\n", err)
 	}
 	defer tr.Close()
 
-	fmt.Println("🔒 P2P WebRTC connection secured. Initializing E2EE encryption...")
 	if err := transfer.SendFile(tr, targetPath, roomCode); err != nil {
 		log.Fatalf("Transfer failed: %v\n", err)
 	}
@@ -251,15 +250,12 @@ func runReceive(cmd *cobra.Command, args []string) {
 	}
 	defer sigClient.Close()
 
-	fmt.Println("⏳ Negotiating WebRTC NAT traversal with peer...")
-
-	tr, err := transport.ConnectWebRTC(ctx, sigClient, false, nil)
+	tr, err := transport.EstablishTransport(ctx, sigClient, false)
 	if err != nil {
-		log.Fatalf("WebRTC connection failed: %v\n", err)
+		log.Fatalf("Connection failed: %v\n", err)
 	}
 	defer tr.Close()
 
-	fmt.Println("🔒 P2P WebRTC connection secured. Negotiating session encryption...")
 	if err := transfer.ReceiveFile(tr, outputDir, roomCode, autoAccept); err != nil {
 		log.Fatalf("Transfer failed: %v\n", err)
 	}

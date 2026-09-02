@@ -18,7 +18,7 @@ var upgrader = websocket.Upgrader{
 	},
 }
 
-// ClientMessage represents incoming messages from CLI clients
+// ClientMessage represents incoming text messages from CLI clients
 type ClientMessage struct {
 	Type string          `json:"type"` // "join", "signal", "leave"
 	Room string          `json:"room,omitempty"`
@@ -26,7 +26,7 @@ type ClientMessage struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-// ServerMessage represents messages sent back to clients
+// ServerMessage represents text messages sent back to clients
 type ServerMessage struct {
 	Type    string          `json:"type"` // "joined", "peer_joined", "peer_left", "signal", "error"
 	Role    string          `json:"role,omitempty"`
@@ -35,11 +35,16 @@ type ServerMessage struct {
 	Message string          `json:"message,omitempty"`
 }
 
+type outMsg struct {
+	msgType int
+	data    []byte
+}
+
 type ClientConn struct {
 	ws     *websocket.Conn
 	roomID string
 	role   string
-	send   chan []byte
+	send   chan outMsg
 }
 
 type Room struct {
@@ -88,8 +93,8 @@ func (s *Server) Start(addr string) error {
 	s.httpServer = &http.Server{
 		Addr:         addr,
 		Handler:      s.Handler(),
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
+		ReadTimeout:  60 * time.Second,
+		WriteTimeout: 60 * time.Second,
 	}
 
 	go s.runLoop()
@@ -131,15 +136,18 @@ func (s *Server) runLoop() {
 }
 
 func (s *Server) broadcastToRoom(roomID string, sender *ClientConn, msg ServerMessage) {
+	data, err := json.Marshal(msg)
+	if err != nil {
+		return
+	}
+	s.broadcastRawToRoom(roomID, sender, websocket.TextMessage, data)
+}
+
+func (s *Server) broadcastRawToRoom(roomID string, sender *ClientConn, msgType int, data []byte) {
 	s.mu.RLock()
 	room, ok := s.rooms[roomID]
 	s.mu.RUnlock()
 	if !ok {
-		return
-	}
-
-	data, err := json.Marshal(msg)
-	if err != nil {
 		return
 	}
 
@@ -148,7 +156,7 @@ func (s *Server) broadcastToRoom(roomID string, sender *ClientConn, msg ServerMe
 	for client := range room.clients {
 		if client != sender {
 			select {
-			case client.send <- data:
+			case client.send <- outMsg{msgType: msgType, data: data}:
 			default:
 				// Buffer full
 			}
@@ -165,7 +173,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	client := &ClientConn{
 		ws:   ws,
-		send: make(chan []byte, 64),
+		send: make(chan outMsg, 256),
 	}
 
 	// Write pump
@@ -174,7 +182,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			_ = client.ws.Close()
 		}()
 		for msg := range client.send {
-			if err := client.ws.WriteMessage(websocket.TextMessage, msg); err != nil {
+			if err := client.ws.WriteMessage(msg.msgType, msg.data); err != nil {
 				return
 			}
 		}
@@ -190,11 +198,18 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	client.ws.SetReadLimit(64 * 1024)
+	client.ws.SetReadLimit(16 * 1024 * 1024) // 16 MB max frame size
 	for {
-		_, rawMsg, err := client.ws.ReadMessage()
+		msgType, rawMsg, err := client.ws.ReadMessage()
 		if err != nil {
 			break
+		}
+
+		if msgType == websocket.BinaryMessage {
+			if client.roomID != "" {
+				s.broadcastRawToRoom(client.roomID, client, websocket.BinaryMessage, rawMsg)
+			}
+			continue
 		}
 
 		var cMsg ClientMessage
@@ -274,7 +289,7 @@ func (s *Server) sendMsg(client *ClientConn, msg ServerMessage) {
 		return
 	}
 	select {
-	case client.send <- data:
+	case client.send <- outMsg{msgType: websocket.TextMessage, data: data}:
 	default:
 	}
 }
