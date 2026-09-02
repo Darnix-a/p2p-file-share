@@ -32,4 +32,11 @@ echo "Starting Cloudflare tunnel for port $RELAY_PORT..."
 echo "Your public address is the URL ending with .trycloudflare.com"
 echo ""
 
-$CLOUDFLARED_CMD tunnel --url "http://127.0.0.1:$RELAY_PORT"
+# Loop to retry if Cloudflare API temporarily times out
+for attempt in 1 2 3; do
+  if $CLOUDFLARED_CMD tunnel --url "http://127.0.0.1:$RELAY_PORT"; then
+    break
+  fi
+  echo "Cloudflare API timeout, retrying in 2 seconds (attempt $attempt/3)..."
+  sleep 2
+done
