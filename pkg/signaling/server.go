@@ -43,10 +43,18 @@ type outMsg struct {
 }
 
 type ClientConn struct {
-	ws     *websocket.Conn
-	roomID string
-	role   string
-	send   chan outMsg
+	ws        *websocket.Conn
+	roomID    string
+	role      string
+	send      chan outMsg
+	closeOnce sync.Once
+}
+
+func (c *ClientConn) Close() {
+	c.closeOnce.Do(func() {
+		close(c.send)
+		_ = c.ws.Close()
+	})
 }
 
 type Room struct {
@@ -59,17 +67,13 @@ type Room struct {
 type Server struct {
 	rooms      map[string]*Room
 	mu         sync.RWMutex
-	register   chan *ClientConn
-	unregister chan *ClientConn
 	httpServer *http.Server
 }
 
 // NewServer creates a new signaling server
 func NewServer() *Server {
 	return &Server{
-		rooms:      make(map[string]*Room),
-		register:   make(chan *ClientConn),
-		unregister: make(chan *ClientConn),
+		rooms: make(map[string]*Room),
 	}
 }
 
@@ -95,10 +99,7 @@ func (s *Server) Start(addr string) error {
 	s.httpServer = &http.Server{
 		Addr:    addr,
 		Handler: s.Handler(),
-		// Note: Do NOT set ReadTimeout / WriteTimeout on http.Server for WebSockets
 	}
-
-	go s.runLoop()
 
 	log.Printf("Relay server listening on %s/ws\n", addr)
 	return s.httpServer.ListenAndServe()
@@ -112,28 +113,31 @@ func (s *Server) Stop() error {
 	return nil
 }
 
-func (s *Server) runLoop() {
-	for client := range s.unregister {
-		s.mu.Lock()
-		if room, ok := s.rooms[client.roomID]; ok {
-			room.mu.Lock()
-			delete(room.clients, client)
-			remaining := len(room.clients)
-			room.mu.Unlock()
+func (s *Server) removeClient(client *ClientConn) {
+	if client.roomID == "" {
+		client.Close()
+		return
+	}
 
-			// Notify other peer in the room
+	s.mu.Lock()
+	room, ok := s.rooms[client.roomID]
+	if ok {
+		room.mu.Lock()
+		delete(room.clients, client)
+		remaining := len(room.clients)
+		room.mu.Unlock()
+
+		if remaining == 0 {
+			delete(s.rooms, client.roomID)
+		} else {
 			s.broadcastToRoom(client.roomID, client, ServerMessage{
 				Type:  "peer_left",
 				Peers: remaining,
 			})
-
-			if remaining == 0 {
-				delete(s.rooms, client.roomID)
-			}
 		}
-		s.mu.Unlock()
-		close(client.send)
 	}
+	s.mu.Unlock()
+	client.Close()
 }
 
 func (s *Server) broadcastToRoom(roomID string, sender *ClientConn, msg ServerMessage) {
@@ -204,12 +208,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Read pump
 	defer func() {
-		if client.roomID != "" {
-			s.unregister <- client
-		} else {
-			close(client.send)
-			_ = client.ws.Close()
-		}
+		s.removeClient(client)
 	}()
 
 	client.ws.SetReadLimit(16 * 1024 * 1024) // 16 MB max frame size
@@ -260,11 +259,12 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 			}
 
 			room.mu.Lock()
-			if len(room.clients) >= 2 {
-				room.mu.Unlock()
-				s.mu.Unlock()
-				s.sendError(client, "Room is full (already has 2 peers)")
-				return
+			// Auto-evict stale client with same role
+			for existing := range room.clients {
+				if existing.role == client.role {
+					delete(room.clients, existing)
+					existing.Close()
+				}
 			}
 
 			room.clients[client] = true
@@ -279,7 +279,7 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 				Peers: peerCount,
 			})
 
-			// Notify other peer if present
+			// If both peers are in the room, notify both!
 			if peerCount == 2 {
 				s.broadcastToRoom(roomID, client, ServerMessage{
 					Type:  "peer_joined",
