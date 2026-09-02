@@ -100,15 +100,15 @@ func ReceiveFile(tr transport.Transport, outputDir string, roomCode string, auto
 		typeStr = "Directory"
 	}
 
-	fmt.Printf("\n📦 Incoming %s: %s (%s)\n", typeStr, meta.Name, ui.FormatBytes(meta.Size))
+	fmt.Printf("\nIncoming %s: %s (%s)\n", typeStr, meta.Name, ui.FormatBytes(meta.Size))
 	if senderHandshake.Device != "" {
-		fmt.Printf("💻 From Peer: %s\n", senderHandshake.Device)
+		fmt.Printf("From peer: %s\n", senderHandshake.Device)
 	}
 
 	// 3. User Confirmation Prompt
 	accepted := autoAccept
 	if !accepted {
-		accepted = ui.PromptConfirm("Do you want to accept this transfer?")
+		accepted = ui.PromptConfirm("Accept this transfer?")
 	}
 
 	metaResp := protocol.MetaResponseMsg{
@@ -128,7 +128,7 @@ func ReceiveFile(tr transport.Transport, outputDir string, roomCode string, auto
 	}
 
 	if !accepted {
-		fmt.Println("❌ Transfer declined.")
+		fmt.Println("Transfer declined.")
 		return nil
 	}
 
@@ -205,8 +205,8 @@ func ReceiveFile(tr transport.Transport, outputDir string, roomCode string, auto
 				return fmt.Errorf("failed to send transfer ack: %w", err)
 			}
 
-			fmt.Printf("\n🎉 Saved to: %s\n", outputDir)
-			fmt.Printf("🔒 Verified SHA-256: %s\n", computedChecksum)
+			fmt.Printf("\nSaved to: %s\n", outputDir)
+			fmt.Printf("Verified SHA-256: %s\n", computedChecksum)
 			return nil
 		}
 

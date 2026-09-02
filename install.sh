@@ -20,7 +20,7 @@ case "$ARCH" in
   x86_64) ARCH="amd64" ;;
   aarch64|arm64) ARCH="arm64" ;;
   *)
-    echo "❌ Unsupported architecture: $ARCH"
+    echo "Error: Unsupported architecture $ARCH"
     exit 1
     ;;
 esac
@@ -28,19 +28,19 @@ esac
 case "$OS" in
   linux|darwin) ;;
   *)
-    echo "❌ Unsupported operating system: $OS"
+    echo "Error: Unsupported operating system $OS"
     exit 1
     ;;
 esac
 
 TAG=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 if [ -z "$TAG" ]; then
-  TAG="v1.0.0"
+  TAG="v1.0.4"
 fi
 
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${TAG}/${BIN_NAME}-${OS}-${ARCH}.tar.gz"
 
-echo "⬇️  Downloading ${BIN_NAME} (${OS}/${ARCH})..."
+echo "Downloading ${BIN_NAME} (${OS}/${ARCH})..."
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
@@ -48,26 +48,22 @@ if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/${BIN_NAME}.tar.gz"; then
   tar -xzf "$TMP_DIR/${BIN_NAME}.tar.gz" -C "$TMP_DIR"
   mv "$TMP_DIR/${BIN_NAME}-${OS}-${ARCH}" "${INSTALL_DIR}/${BIN_NAME}"
   chmod +x "${INSTALL_DIR}/${BIN_NAME}"
-  echo "✅ ${BIN_NAME} installed successfully to ${INSTALL_DIR}/${BIN_NAME}"
+  echo "${BIN_NAME} installed to ${INSTALL_DIR}/${BIN_NAME}"
   
   if [[ ":$PATH:" != *":$INSTALL_DIR:"* ]]; then
     echo ""
-    echo "💡 Note: '$INSTALL_DIR' is not in your current PATH."
-    echo "   - For Fish:  fish_add_path $INSTALL_DIR"
-    echo "   - For Bash:  export PATH=\"\$HOME/.local/bin:\$PATH\" >> ~/.bashrc"
-    echo "   - For Zsh:   export PATH=\"\$HOME/.local/bin:\$PATH\" >> ~/.zshrc"
+    echo "Note: '$INSTALL_DIR' is not in your current PATH."
+    echo "  - For Fish: fish_add_path $INSTALL_DIR"
+    echo "  - For Bash: export PATH=\"\$HOME/.local/bin:\$PATH\" >> ~/.bashrc"
+    echo "  - For Zsh:  export PATH=\"\$HOME/.local/bin:\$PATH\" >> ~/.zshrc"
     echo ""
   fi
 
-  echo "🚀 Run 'p2p-drop --help' or '$INSTALL_DIR/p2p-drop --help' to get started!"
+  echo "Run 'p2p-drop --help' to get started."
 else
   echo ""
-  echo "❌ Could not find a binary release at:"
-  echo "   $DOWNLOAD_URL"
-  echo ""
-  echo "💡 Have you published a release tag yet? To publish v1.0.0:"
-  echo "   git tag v1.0.0"
-  echo "   git push origin v1.0.0"
+  echo "Error: Could not download release from:"
+  echo "  $DOWNLOAD_URL"
   echo ""
   exit 1
 fi

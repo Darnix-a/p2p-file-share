@@ -7,14 +7,14 @@ $Repo = "Darnix-a/p2p-file-share"
 $BinName = "p2p-drop"
 $InstallDir = "$env:LOCALAPPDATA\Programs\$BinName"
 
-Write-Host "📦 Installing $BinName for Windows..." -ForegroundColor Cyan
+Write-Host "Installing $BinName for Windows..."
 
 # Fetch latest release tag
 try {
     $ReleaseInfo = Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/latest"
     $Tag = $ReleaseInfo.tag_name
 } catch {
-    $Tag = "v1.0.0"
+    $Tag = "v1.0.4"
 }
 
 $Arch = "amd64"
@@ -25,10 +25,10 @@ $TempDir = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName())
 New-Item -ItemType Directory -Path $TempDir -Force | Out-Null
 $ZipPath = Join-Path $TempDir $ZipName
 
-Write-Host "⬇️  Downloading $DownloadUrl..." -ForegroundColor Yellow
+Write-Host "Downloading $DownloadUrl..."
 Invoke-WebRequest -Uri $DownloadUrl -OutFile $ZipPath
 
-Write-Host "📂 Extracting files to $InstallDir..." -ForegroundColor Yellow
+Write-Host "Extracting to $InstallDir..."
 New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 Expand-Archive -Path $ZipPath -DestinationPath $TempDir -Force
 
@@ -44,10 +44,10 @@ Remove-Item -Path $TempDir -Recurse -Force
 # Add to User PATH if not present
 $UserPath = [Environment]::GetEnvironmentVariable("Path", [EnvironmentVariableTarget]::User)
 if ($UserPath -notlike "*$InstallDir*") {
-    Write-Host "🔧 Adding $InstallDir to User PATH..." -ForegroundColor Cyan
+    Write-Host "Adding $InstallDir to User PATH..."
     [Environment]::SetEnvironmentVariable("Path", "$UserPath;$InstallDir", [EnvironmentVariableTarget]::User)
     $env:Path += ";$InstallDir"
 }
 
-Write-Host "✅ $BinName installed successfully!" -ForegroundColor Green
-Write-Host "🚀 Open a new PowerShell / Command Prompt and run: p2p-drop --help" -ForegroundColor Green
+Write-Host "$BinName installed successfully."
+Write-Host "Open a new PowerShell / Command Prompt and run: p2p-drop --help"

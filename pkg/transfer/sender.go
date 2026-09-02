@@ -107,7 +107,7 @@ func SendFile(tr transport.Transport, path string, roomCode string) error {
 		return fmt.Errorf("failed to send metadata: %w", err)
 	}
 
-	fmt.Printf("⏳ Waiting for receiver to accept transfer (%s - %s)...\n", fileName, ui.FormatBytes(totalSize))
+	fmt.Printf("Waiting for receiver to accept (%s - %s)...\n", fileName, ui.FormatBytes(totalSize))
 
 	// 3. Wait for MetaResponse
 	rawRespFrame, err := tr.Receive()
@@ -133,7 +133,7 @@ func SendFile(tr transport.Transport, path string, roomCode string) error {
 		return fmt.Errorf("receiver declined transfer: %s", metaResp.Reason)
 	}
 
-	fmt.Println("🚀 Receiver accepted. Streaming encrypted data...")
+	fmt.Println("Receiver accepted. Streaming encrypted data...")
 
 	// 4. Stream and Encrypt Chunks
 	hasher := sha256.New()
@@ -226,6 +226,6 @@ func SendFile(tr transport.Transport, path string, roomCode string) error {
 		return fmt.Errorf("receiver reported transfer failed: %s", ack.Message)
 	}
 
-	fmt.Printf("\n✨ Transfer complete! Verified SHA-256: %s\n", finalChecksum)
+	fmt.Printf("\nTransfer complete. Verified SHA-256: %s\n", finalChecksum)
 	return nil
 }

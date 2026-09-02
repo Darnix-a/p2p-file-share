@@ -23,24 +23,23 @@ func FormatBytes(b int64) string {
 	return fmt.Sprintf("%.2f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
-// NewProgressBar creates a modern progress bar for file transfer
+// NewProgressBar creates a clean progress bar for file transfer
 func NewProgressBar(totalBytes int64, description string) *progressbar.ProgressBar {
 	return progressbar.NewOptions64(
 		totalBytes,
 		progressbar.OptionSetDescription(description),
 		progressbar.OptionSetWriter(os.Stderr),
 		progressbar.OptionShowBytes(true),
-		progressbar.OptionSetWidth(18),
+		progressbar.OptionSetWidth(20),
 		progressbar.OptionThrottle(65),
 		progressbar.OptionShowCount(),
 		progressbar.OptionOnCompletion(func() {
 			fmt.Fprint(os.Stderr, "\n")
 		}),
-		progressbar.OptionSpinnerType(14),
 		progressbar.OptionFullWidth(),
 		progressbar.OptionSetTheme(progressbar.Theme{
-			Saucer:        "[green]=[reset]",
-			SaucerHead:    "[green]>[reset]",
+			Saucer:        "=",
+			SaucerHead:    ">",
 			SaucerPadding: " ",
 			BarStart:      "[",
 			BarEnd:        "]",
@@ -60,16 +59,7 @@ func PromptConfirm(prompt string) bool {
 	return response == "y" || response == "yes"
 }
 
-// PrintBanner displays the tool header banner
+// PrintBanner displays a clean header
 func PrintBanner() {
-	banner := `
-  ____ ____  ____        ____  ____   ___  ____  
- |  _ \___ \|  _ \      |  _ \|  _ \ / _ \|  _ \ 
- | |_) |__) | |_) |_____| | | | |_) | | | | |_) |
- |  __// __/|  __/ _____| |_| |  _ <| |_| |  __/ 
- |_|  |_____|_|         |____/|_| \_\\___/|_|    
-    End-to-End Encrypted P2P File Dropper
-`
-	fmt.Print(banner)
-	fmt.Println()
+	// Minimal clean header
 }

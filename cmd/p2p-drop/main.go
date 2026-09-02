@@ -20,12 +20,12 @@ import (
 )
 
 var (
-	relayURL    string
-	lanMode     bool
-	autoAccept  bool
-	outputDir   string
-	customCode  string
-	relayPort   string
+	relayURL   string
+	lanMode    bool
+	autoAccept bool
+	outputDir  string
+	customCode string
+	relayPort  string
 )
 
 const defaultRelayURL = "ws://127.0.0.1:8080"
@@ -33,13 +33,10 @@ const defaultRelayURL = "ws://127.0.0.1:8080"
 func main() {
 	rootCmd := &cobra.Command{
 		Use:   "p2p-drop",
-		Short: "p2p-drop is an end-to-end encrypted peer-to-peer file transfer tool",
-		Long: `p2p-drop allows you to send files and entire directories directly between computers
-over the internet (using WebRTC NAT hole punching) or across your local Wi-Fi / LAN,
-with zero middleman servers and full ChaCha20-Poly1305 end-to-end encryption.`,
+		Short: "End-to-end encrypted peer-to-peer file transfer tool",
 	}
 
-	rootCmd.PersistentFlags().StringVar(&relayURL, "relay", defaultRelayURL, "Signaling relay server WebSocket URL")
+	rootCmd.PersistentFlags().StringVar(&relayURL, "relay", defaultRelayURL, "Signaling relay server URL")
 
 	// Send Command
 	sendCmd := &cobra.Command{
@@ -48,8 +45,8 @@ with zero middleman servers and full ChaCha20-Poly1305 end-to-end encryption.`,
 		Args:  cobra.ExactArgs(1),
 		Run:   runSend,
 	}
-	sendCmd.Flags().StringVar(&customCode, "code", "", "Custom pairing code (default: auto-generated 3-word phrase)")
-	sendCmd.Flags().BoolVar(&lanMode, "lan", false, "Use direct LAN discovery and transfer")
+	sendCmd.Flags().StringVar(&customCode, "code", "", "Custom pairing code")
+	sendCmd.Flags().BoolVar(&lanMode, "lan", false, "Use direct local network discovery and transfer")
 
 	// Receive Command
 	receiveCmd := &cobra.Command{
@@ -59,13 +56,13 @@ with zero middleman servers and full ChaCha20-Poly1305 end-to-end encryption.`,
 		Run:   runReceive,
 	}
 	receiveCmd.Flags().StringVarP(&outputDir, "output", "o", ".", "Destination directory for received files")
-	receiveCmd.Flags().BoolVarP(&autoAccept, "yes", "y", false, "Automatically accept file transfer without confirmation prompt")
-	receiveCmd.Flags().BoolVar(&lanMode, "lan", false, "Listen for LAN broadcast drops")
+	receiveCmd.Flags().BoolVarP(&autoAccept, "yes", "y", false, "Accept file transfer without confirmation prompt")
+	receiveCmd.Flags().BoolVar(&lanMode, "lan", false, "Listen for local network broadcast drops")
 
 	// Relay Server Command
 	relayCmd := &cobra.Command{
 		Use:   "relay",
-		Short: "Start a lightweight WebRTC signaling relay server",
+		Short: "Start signaling relay server",
 		Run:   runRelay,
 	}
 	relayCmd.Flags().StringVarP(&relayPort, "port", "p", "8080", "Port to listen on")
@@ -79,7 +76,6 @@ with zero middleman servers and full ChaCha20-Poly1305 end-to-end encryption.`,
 }
 
 func runSend(cmd *cobra.Command, args []string) {
-	ui.PrintBanner()
 	targetPath := args[0]
 
 	fileInfo, err := os.Stat(targetPath)
@@ -100,26 +96,23 @@ func runSend(cmd *cobra.Command, args []string) {
 	var totalSize int64
 	if fileInfo.IsDir() {
 		totalSize, _ = transfer.GetDirectorySize(targetPath)
-		fmt.Printf("📁 Preparing directory: %s (%s)\n", targetPath, ui.FormatBytes(totalSize))
+		fmt.Printf("Preparing directory: %s (%s)\n", targetPath, ui.FormatBytes(totalSize))
 	} else {
 		totalSize = fileInfo.Size()
-		fmt.Printf("📄 Preparing file: %s (%s)\n", targetPath, ui.FormatBytes(totalSize))
+		fmt.Printf("Preparing file: %s (%s)\n", targetPath, ui.FormatBytes(totalSize))
 	}
 
-	fmt.Printf("\n======================================================\n")
-	fmt.Printf("🔑 Pairing Code: \033[1;32m%s\033[0m\n", roomCode)
-	fmt.Printf("======================================================\n")
-	fmt.Println("Tell your friend to run:")
+	fmt.Printf("\nPairing code: %s\n", roomCode)
+	fmt.Println("Run this on the receiving machine:")
 	if relayURL != defaultRelayURL {
-		fmt.Printf("  \033[1;36mp2p-drop receive %s --relay %s\033[0m\n\n", roomCode, relayURL)
+		fmt.Printf("  p2p-drop receive %s --relay %s\n\n", roomCode, relayURL)
 	} else {
-		fmt.Printf("  \033[1;36mp2p-drop receive %s\033[0m\n\n", roomCode)
+		fmt.Printf("  p2p-drop receive %s\n\n", roomCode)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Setup signal interrupt handler
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
 	go func() {
@@ -130,7 +123,6 @@ func runSend(cmd *cobra.Command, args []string) {
 	}()
 
 	if lanMode {
-		// LAN Direct Mode
 		tcpPort := 9876
 		listener, acceptFunc, err := transport.ListenAndAcceptTCP(tcpPort, 5*time.Minute)
 		if err != nil {
@@ -142,7 +134,7 @@ func runSend(cmd *cobra.Command, args []string) {
 		_ = broadcaster.Start()
 		defer broadcaster.Stop()
 
-		fmt.Println("📡 Broadcasting on local LAN... Waiting for receiver to connect...")
+		fmt.Println("Broadcasting on local network... Waiting for receiver to connect...")
 
 		tr, err := acceptFunc()
 		if err != nil {
@@ -150,25 +142,25 @@ func runSend(cmd *cobra.Command, args []string) {
 		}
 		defer tr.Close()
 
-		fmt.Println("⚡ Direct LAN connection established! Starting encrypted transfer...")
+		fmt.Println("Connected via LAN. Starting encrypted transfer...")
 		if err := transfer.SendFile(tr, targetPath, roomCode); err != nil {
 			log.Fatalf("Transfer failed: %v\n", err)
 		}
 		return
 	}
 
-	// WebRTC WAN Mode
-	fmt.Printf("🌐 Connecting to signaling relay (%s)...\n", relayURL)
+	// Internet Mode
+	fmt.Printf("Connecting to relay (%s)...\n", relayURL)
 	sigClient, err := signaling.NewClient(relayURL, roomCode, "sender")
 	if err != nil {
-		log.Fatalf("Signaling error: %v\n(Make sure the relay server is running or pass --relay <url>)\n", err)
+		log.Fatalf("Signaling error: %v\n(Check relay URL or ensure relay is running)\n", err)
 	}
 	defer sigClient.Close()
 
-	fmt.Println("⏳ Waiting for peer to enter room code...")
+	fmt.Println("Waiting for receiver to connect...")
 	select {
 	case <-sigClient.PeerJoined:
-		fmt.Println("🤝 Peer connected!")
+		fmt.Println("Peer connected.")
 	case err := <-sigClient.ErrorChan:
 		log.Fatalf("Signaling error: %v\n", err)
 	case <-ctx.Done():
@@ -187,8 +179,6 @@ func runSend(cmd *cobra.Command, args []string) {
 }
 
 func runReceive(cmd *cobra.Command, args []string) {
-	ui.PrintBanner()
-
 	var roomCode string
 	if len(args) > 0 {
 		roomCode = crypto.SanitizeCode(args[0])
@@ -207,7 +197,7 @@ func runReceive(cmd *cobra.Command, args []string) {
 	}()
 
 	if lanMode || roomCode == "" {
-		fmt.Println("🔍 Scanning local LAN for active p2p-drop beacons...")
+		fmt.Println("Scanning local network for active drops...")
 		listener := discovery.NewListener()
 		if err := listener.Start(); err != nil {
 			log.Printf("LAN discovery error: %v\n", err)
@@ -216,13 +206,13 @@ func runReceive(cmd *cobra.Command, args []string) {
 			select {
 			case beacon := <-listener.FoundChan:
 				if roomCode == "" || roomCode == beacon.RoomCode {
-					fmt.Printf("⚡ Discovered LAN drop from %s (%s, %s)\n", beacon.HostName, beacon.FileName, ui.FormatBytes(beacon.FileSize))
+					fmt.Printf("Discovered drop from %s (%s, %s)\n", beacon.HostName, beacon.FileName, ui.FormatBytes(beacon.FileSize))
 					roomCode = beacon.RoomCode
 					addr := fmt.Sprintf("%s:%d", beacon.HostName, beacon.Port)
 					tr, err := transport.DialTCP(addr, 10*time.Second)
 					if err == nil {
 						defer tr.Close()
-						fmt.Println("🔒 Connected via direct LAN! Receiving encrypted file...")
+						fmt.Println("Connected via LAN. Starting encrypted transfer...")
 						if err := transfer.ReceiveFile(tr, outputDir, roomCode, autoAccept); err != nil {
 							log.Fatalf("Transfer failed: %v\n", err)
 						}
@@ -238,15 +228,15 @@ func runReceive(cmd *cobra.Command, args []string) {
 	}
 
 	if roomCode == "" {
-		log.Fatal("Please specify the pairing code: p2p-drop receive <code>")
+		log.Fatal("Please specify pairing code: p2p-drop receive <code>")
 	}
 
-	fmt.Printf("🔑 Connecting for code: \033[1;32m%s\033[0m\n", roomCode)
-	fmt.Printf("🌐 Connecting to signaling relay (%s)...\n", relayURL)
+	fmt.Printf("Connecting for code: %s\n", roomCode)
+	fmt.Printf("Connecting to relay (%s)...\n", relayURL)
 
 	sigClient, err := signaling.NewClient(relayURL, roomCode, "receiver")
 	if err != nil {
-		log.Fatalf("Signaling error: %v\n(Make sure the relay server is running or pass --relay <url>)\n", err)
+		log.Fatalf("Signaling error: %v\n(Check relay URL or ensure relay is running)\n", err)
 	}
 	defer sigClient.Close()
 
@@ -262,12 +252,11 @@ func runReceive(cmd *cobra.Command, args []string) {
 }
 
 func runRelay(cmd *cobra.Command, args []string) {
-	ui.PrintBanner()
 	addr := fmt.Sprintf("0.0.0.0:%s", relayPort)
 	server := signaling.NewServer()
-	fmt.Printf("🚀 Starting p2p-drop signaling relay on %s/ws\n", addr)
-	fmt.Println("Peers can use this relay by passing: --relay ws://<your-ip>:" + relayPort)
+	fmt.Printf("Starting signaling relay on %s/ws\n", addr)
+	fmt.Printf("Pass --relay ws://<your-ip>:%s on clients\n", relayPort)
 	if err := server.Start(addr); err != nil {
-		log.Fatalf("Relay server failed: %v\n", err)
+		log.Fatalf("Relay server error: %v\n", err)
 	}
 }

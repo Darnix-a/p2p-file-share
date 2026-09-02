@@ -1,6 +1,6 @@
 # p2p-drop
 
-End-to-end encrypted peer-to-peer file and folder transfer CLI tool. Transfers data directly between machines over local networks (LAN) or the internet (WAN) with zero third-party storage.
+End-to-end encrypted peer-to-peer file and folder transfer CLI tool. Transfers data directly between computers over local networks (LAN) or across the internet (WAN) with zero third-party storage.
 
 ## Installation
 
@@ -24,10 +24,11 @@ go build -o p2p-drop ./cmd/p2p-drop
 ## Quick Start
 
 ### 1. Local Network (LAN) Transfer
+No internet or relay server required.
 
 Sender:
 ```bash
-p2p-drop send --lan path/to/file.zip
+p2p-drop send --lan path/to/file.iso
 # or send a whole directory:
 p2p-drop send --lan path/to/folder/
 ```
@@ -37,22 +38,43 @@ Receiver:
 p2p-drop receive --lan
 ```
 
+---
+
 ### 2. Internet (WAN) Transfer
 
-Start relay server (or run with Cloudflare tunnel):
+#### Step 1: Start the Relay & Cloudflare Tunnel (Sender PC)
+Run in a separate terminal:
 ```bash
-p2p-drop relay --port 8080
+make tunnel
+# or: ./scripts/start-relay-tunnel.sh
+```
+This prints your public address (e.g. `https://random-name.trycloudflare.com`).
+
+#### Step 2: Send the File
+```bash
+p2p-drop send path/to/file.iso --relay https://random-name.trycloudflare.com
+```
+This prints a pairing code (e.g. `42-crystal-dragon-falcon`).
+
+#### Step 3: Receive on Friend's PC
+```bash
+p2p-drop receive 42-crystal-dragon-falcon --relay https://random-name.trycloudflare.com
 ```
 
-Sender:
-```bash
-p2p-drop send path/to/file.zip --relay ws://YOUR_RELAY_IP:8080
-```
+---
 
-Receiver:
-```bash
-p2p-drop receive <room-code> --relay ws://YOUR_RELAY_IP:8080
-```
+## Troubleshooting
+
+### Connection is stuck on "Waiting for receiver" or "Negotiating connection"
+1. **Check the relay URL:** Ensure both sender and receiver use the exact same `--relay` URL.
+2. **Ensure the tunnel is active:** The `make tunnel` terminal must stay running during the transfer.
+3. **No open ports / Strict NAT:** `p2p-drop` automatically uses WebRTC STUN and built-in TURN relays (port 443) to bypass symmetric NATs and firewalls without port forwarding.
+
+### Transfer speed is capped or slow
+1. **Local transfer:** If sender and receiver are on the same Wi-Fi, use `--lan` to bypass the internet entirely for maximum local network speed.
+2. **Internet transfer:** Direct WebRTC P2P connects automatically after candidate gathering. If direct P2P is blocked by restrictive ISP routing, traffic falls back to the encrypted relay.
+
+---
 
 ## Command Reference
 
