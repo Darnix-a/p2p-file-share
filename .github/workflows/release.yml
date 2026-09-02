@@ -45,14 +45,12 @@ jobs:
       - name: Package Archives
         run: |
           cd dist
-          for file in *; do
-            if [[ "$file" == *.exe ]]; then
-              zip "${file%.exe}.zip" "$file"
-            else
-              tar -czf "${file}.tar.gz" "$file"
-            fi
-          done
-          sha256sum *.{tar.gz,zip} > checksums.txt
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            sudo apt-get update && sudo apt-get install -y zip
+            zip -q "p2p-drop-${{ matrix.goos }}-${{ matrix.goarch }}.zip" "p2p-drop-${{ matrix.goos }}-${{ matrix.goarch }}.exe"
+          else
+            tar -czf "p2p-drop-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" "p2p-drop-${{ matrix.goos }}-${{ matrix.goarch }}"
+          fi
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -60,4 +58,3 @@ jobs:
           files: |
             dist/*.tar.gz
             dist/*.zip
-            dist/checksums.txt

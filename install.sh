@@ -44,14 +44,20 @@ echo "⬇️  Downloading ${BIN_NAME} (${OS}/${ARCH})..."
 TMP_DIR=$(mktemp -d)
 trap 'rm -rf "$TMP_DIR"' EXIT
 
-if curl -sL "$DOWNLOAD_URL" -o "$TMP_DIR/${BIN_NAME}.tar.gz"; then
+if curl -fsSL "$DOWNLOAD_URL" -o "$TMP_DIR/${BIN_NAME}.tar.gz"; then
   tar -xzf "$TMP_DIR/${BIN_NAME}.tar.gz" -C "$TMP_DIR"
   mv "$TMP_DIR/${BIN_NAME}-${OS}-${ARCH}" "${INSTALL_DIR}/${BIN_NAME}"
   chmod +x "${INSTALL_DIR}/${BIN_NAME}"
   echo "✅ ${BIN_NAME} installed successfully to ${INSTALL_DIR}/${BIN_NAME}"
   echo "🚀 Run 'p2p-drop --help' to get started!"
 else
-  echo "❌ Failed to download release from $DOWNLOAD_URL."
-  echo "💡 Tip: You can compile from source with 'go build -o p2p-drop ./cmd/p2p-drop'."
+  echo ""
+  echo "❌ Could not find a binary release at:"
+  echo "   $DOWNLOAD_URL"
+  echo ""
+  echo "💡 Have you published a release tag yet? To publish v1.0.0:"
+  echo "   git tag v1.0.0"
+  echo "   git push origin v1.0.0"
+  echo ""
   exit 1
 fi
