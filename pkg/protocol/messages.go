@@ -10,7 +10,7 @@ import (
 
 const (
 	CurrentVersion = 1
-	DefaultChunkSize = 64 * 1024 // 64 KB per chunk
+	DefaultChunkSize = 256 * 1024 // 256 KB per chunk for high throughput
 
 	TypeHandshake    byte = 0x01
 	TypeFileMeta     byte = 0x02

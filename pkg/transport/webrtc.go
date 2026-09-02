@@ -267,11 +267,11 @@ func (t *WebRTCTransport) Send(data []byte) error {
 	default:
 	}
 
-	// If buffered amount exceeds 1.5MB, pause and wait for buffer to drain
-	for t.dataChannel.BufferedAmount() > 1536*1024 {
+	// If buffered amount exceeds 8MB, pause and wait for buffer to drain
+	for t.dataChannel.BufferedAmount() > 8*1024*1024 {
 		select {
 		case <-t.bufferedLow:
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(50 * time.Millisecond):
 		case <-t.closed:
 			return errors.New("transport closed")
 		}
