@@ -33,6 +33,11 @@ var DefaultICEServers = []webrtc.ICEServer{
 	},
 }
 
+const (
+	p2pPing = "__P2P_PING__"
+	p2pPong = "__P2P_PONG__"
+)
+
 // WebRTCTransport implements Transport over WebRTC DataChannel
 type WebRTCTransport struct {
 	peerConn    *webrtc.PeerConnection
@@ -45,7 +50,7 @@ type WebRTCTransport struct {
 	bufferedLow chan struct{}
 }
 
-// ConnectWebRTC establishes a peer-to-peer WebRTC DataChannel connection using the signaling client
+// ConnectWebRTC establishes a peer-to-peer WebRTC DataChannel connection with verified ping-pong
 func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bool, customICEServers []webrtc.ICEServer) (*WebRTCTransport, error) {
 	iceServers := DefaultICEServers
 	if len(customICEServers) > 0 {
@@ -63,7 +68,7 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 
 	t := &WebRTCTransport{
 		peerConn:    pc,
-		recvChan:    make(chan []byte, 256),
+		recvChan:    make(chan []byte, 512),
 		errChan:     make(chan error, 4),
 		closed:      make(chan struct{}),
 		readyChan:   make(chan struct{}),
@@ -110,7 +115,7 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 	pc.OnConnectionStateChange(func(s webrtc.PeerConnectionState) {
 		if s == webrtc.PeerConnectionStateFailed || s == webrtc.PeerConnectionStateClosed {
 			select {
-			case t.errChan <- errors.New("WebRTC connection failed (could not negotiate NAT traversal)"):
+			case t.errChan <- errors.New("WebRTC connection failed (NAT traversal blocked)"):
 			default:
 			}
 		}
@@ -118,7 +123,7 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 
 	setupDataChannel := func(dc *webrtc.DataChannel) {
 		t.dataChannel = dc
-		dc.SetBufferedAmountLowThreshold(512 * 1024) // 512 KB
+		dc.SetBufferedAmountLowThreshold(2 * 1024 * 1024)
 
 		dc.OnBufferedAmountLow(func() {
 			select {
@@ -128,10 +133,48 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 		})
 
 		dc.OnOpen(func() {
-			close(t.readyChan)
+			if isSender {
+				go func() {
+					ticker := time.NewTicker(200 * time.Millisecond)
+					defer ticker.Stop()
+					for {
+						select {
+						case <-t.readyChan:
+							return
+						case <-t.closed:
+							return
+						case <-ticker.C:
+							_ = dc.Send([]byte(p2pPing))
+						}
+					}
+				}()
+			}
 		})
 
 		dc.OnMessage(func(msg webrtc.DataChannelMessage) {
+			dataStr := string(msg.Data)
+			if dataStr == p2pPing {
+				_ = dc.Send([]byte(p2pPong))
+				if !isSender {
+					select {
+					case <-t.readyChan:
+					default:
+						close(t.readyChan)
+					}
+				}
+				return
+			}
+			if dataStr == p2pPong {
+				if isSender {
+					select {
+					case <-t.readyChan:
+					default:
+						close(t.readyChan)
+					}
+				}
+				return
+			}
+
 			select {
 			case t.recvChan <- msg.Data:
 			case <-t.closed:
@@ -155,7 +198,6 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 	}
 
 	if isSender {
-		// Sender creates DataChannel
 		ordered := true
 		dc, err := pc.CreateDataChannel("p2p-drop-data", &webrtc.DataChannelInit{
 			Ordered: &ordered,
@@ -187,7 +229,6 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 			return nil, fmt.Errorf("failed to send offer: %w", err)
 		}
 	} else {
-		// Receiver waits for DataChannel
 		pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 			setupDataChannel(dc)
 		})
@@ -254,7 +295,7 @@ func ConnectWebRTC(ctx context.Context, sigClient *signaling.Client, isSender bo
 		}
 	}()
 
-	// Wait for DataChannel to be ready
+	// Wait for DataChannel to be verified active on BOTH ends
 	select {
 	case <-t.readyChan:
 		return t, nil
@@ -275,7 +316,6 @@ func (t *WebRTCTransport) Send(data []byte) error {
 	default:
 	}
 
-	// If buffered amount exceeds 8MB, pause and wait for buffer to drain
 	for t.dataChannel.BufferedAmount() > 8*1024*1024 {
 		select {
 		case <-t.bufferedLow:
