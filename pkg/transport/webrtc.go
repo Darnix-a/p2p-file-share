@@ -17,11 +17,19 @@ var DefaultICEServers = []webrtc.ICEServer{
 		URLs: []string{
 			"stun:stun.l.google.com:19302",
 			"stun:stun1.l.google.com:19302",
-			"stun:stun2.l.google.com:19302",
-			"stun:stun3.l.google.com:19302",
-			"stun:stun4.l.google.com:19302",
 			"stun:stun.cloudflare.com:3478",
+			"stun:openrelay.metered.ca:80",
 		},
+	},
+	{
+		URLs: []string{
+			"turn:openrelay.metered.ca:80",
+			"turn:openrelay.metered.ca:443",
+			"turns:openrelay.metered.ca:443?transport=tcp",
+		},
+		Username:       "openrelay",
+		Credential:     "openrelay",
+		CredentialType: webrtc.ICECredentialTypePassword,
 	},
 }
 
